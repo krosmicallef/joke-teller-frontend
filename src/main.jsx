@@ -1,9 +1,10 @@
 import React, { useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Sparkles, Laugh, RotateCw, Terminal, Copy, Check, WandSparkles } from "lucide-react";
+import { Sparkles, Laugh, RotateCw, Terminal, Copy, Check, WandSparkles, Mail } from "lucide-react";
 import "./styles.css";
 
 const API_URL = "http://localhost:8080/api/jokes";
+const SUBSCRIPTION_API_URL = "http://localhost:8080/api/subscriptions";
 
 function App() {
   const [prompt, setPrompt] = useState("A kid friendly joke please");
@@ -11,6 +12,48 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [email, setEmail] = useState("");
+  const [subscribing, setSubscribing] = useState(false);
+  const [subscriptionOutcome, setSubscriptionOutcome] = useState(null);
+
+  async function subscribe(event) {
+    event.preventDefault();
+    const normalizedEmail = email.trim();
+    setSubscribing(true);
+    setSubscriptionOutcome(null);
+
+    try {
+      const response = await fetch(SUBSCRIPTION_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json, text/plain, */*" },
+        body: JSON.stringify({ email: normalizedEmail }),
+      });
+      const body = await response.text();
+      let message = body;
+      try {
+        const data = JSON.parse(body);
+        message = data.message ?? data.error ?? data.detail ?? body;
+      } catch {
+        // The service may return a plain-text response.
+      }
+
+      if (!response.ok) {
+        throw new Error(message || `The subscription service returned HTTP ${response.status}.`);
+      }
+
+      setSubscriptionOutcome({ success: true, message: message || "You're subscribed! Keep an eye on your inbox for a little laughter." });
+      setEmail("");
+    } catch (err) {
+      setSubscriptionOutcome({
+        success: false,
+        message: err instanceof TypeError
+          ? "Couldn't reach the subscription service. Please try again when the service is available."
+          : err.message || "We couldn't complete your subscription. Please try again.",
+      });
+    } finally {
+      setSubscribing(false);
+    }
+  }
 
   async function getJoke(event) {
     event.preventDefault();
@@ -143,6 +186,36 @@ function App() {
             </section>
           )}
         </div>
+        <section className="subscribe-card" aria-labelledby="subscribe-title">
+          <div className="subscribe-icon"><Mail size={19} /></div>
+          <div className="subscribe-copy">
+            <span className="mini-label">A LITTLE FUN IN YOUR INBOX</span>
+            <h2 id="subscribe-title">Get jokes by email</h2>
+            <p>Subscribe with your email and let Jack brighten your day.</p>
+          </div>
+          <form className="subscribe-form" onSubmit={subscribe}>
+            <label className="sr-only" htmlFor="subscriber-email">Email address</label>
+            <input
+              id="subscriber-email"
+              type="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="you@example.com"
+              aria-describedby={subscriptionOutcome ? "subscription-outcome" : undefined}
+              disabled={subscribing}
+            />
+            <button className="subscribe-button" type="submit" disabled={subscribing}>
+              {subscribing ? <><RotateCw className="spin" size={16} /> Subscribing...</> : "Subscribe"}
+            </button>
+          </form>
+          {subscriptionOutcome && (
+            <p id="subscription-outcome" className={`subscription-outcome ${subscriptionOutcome.success ? "success" : "failure"}`} role={subscriptionOutcome.success ? "status" : "alert"}>
+              {subscriptionOutcome.success && <Check size={15} />}{subscriptionOutcome.message}
+            </p>
+          )}
+        </section>
         <div className="under-card"><span>NO BAD DAYS ALLOWED</span><span className="under-star">✳</span><span>JUST GOOD JOKES</span></div>
       </section>
 
