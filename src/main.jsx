@@ -5,6 +5,7 @@ import "./styles.css";
 
 const API_URL = "http://localhost:8080/api/jokes";
 const SUBSCRIPTION_API_URL = "http://localhost:8080/api/subscriptions";
+const SUBSCRIPTION_VERIFY_API_URL = "http://localhost:8080/api/subscribers/verify";
 
 function App() {
   const [prompt, setPrompt] = useState("A kid friendly joke please");
@@ -15,6 +16,10 @@ function App() {
   const [email, setEmail] = useState("");
   const [subscribing, setSubscribing] = useState(false);
   const [subscriptionOutcome, setSubscriptionOutcome] = useState(null);
+  const [verificationEmail, setVerificationEmail] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
+  const [verificationStep, setVerificationStep] = useState(false);
+  const [verifying, setVerifying] = useState(false);
 
   async function subscribe(event) {
     event.preventDefault();
@@ -41,8 +46,10 @@ function App() {
         throw new Error(message || `The subscription service returned HTTP ${response.status}.`);
       }
 
-      setSubscriptionOutcome({ success: true, message: message || "You're subscribed! Keep an eye on your inbox for a little laughter." });
-      setEmail("");
+      setVerificationEmail(normalizedEmail);
+      setVerificationCode("");
+      setSubscriptionOutcome({ success: true, message: message || "We sent a verification code to your email." });
+      setVerificationStep(true);
     } catch (err) {
       setSubscriptionOutcome({
         success: false,
@@ -52,6 +59,43 @@ function App() {
       });
     } finally {
       setSubscribing(false);
+    }
+  }
+
+  async function verifySubscription(event) {
+    event.preventDefault();
+    setVerifying(true);
+    setSubscriptionOutcome(null);
+
+    try {
+      const response = await fetch(SUBSCRIPTION_VERIFY_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json, text/plain, */*" },
+        body: JSON.stringify({ email: verificationEmail.trim(), code: verificationCode }),
+      });
+      const body = await response.text();
+      let message = body;
+      try {
+        const data = JSON.parse(body);
+        message = data.message ?? data.error ?? data.detail ?? body;
+      } catch {
+        // The service may return a plain-text response.
+      }
+
+      if (!response.ok) {
+        throw new Error(message || `The verification service returned HTTP ${response.status}.`);
+      }
+
+      setSubscriptionOutcome({ success: true, message: message || "Your email is verified. You're subscribed!" });
+    } catch (err) {
+      setSubscriptionOutcome({
+        success: false,
+        message: err instanceof TypeError
+          ? "Couldn't reach the subscription service. Please try again when the service is available."
+          : err.message || "We couldn't verify your email. Please try again.",
+      });
+    } finally {
+      setVerifying(false);
     }
   }
 
@@ -129,13 +173,65 @@ function App() {
       <div className="glow glow-two" aria-hidden="true" />
       <header className="topbar">
         <a className="brand" href="#" aria-label="Jack the Joker home">
-          <span className="brand-mark"><Laugh size={19} strokeWidth={2.3} /></span>
+          <span className="brand-mark"><img src="/jack-the-joker-logo.png" alt="" /></span>
           <span>JACK <b>THE JOKER</b></span>
         </a>
         <span className="status"><span className="status-dot" /> YOUR DAILY DOSE OF FUN</span>
       </header>
 
-      <section className="hero">
+      {verificationStep ? (
+        <section className="hero verification-page">
+          <div className="eyebrow"><Mail size={14} /> ONE QUICK CHECK</div>
+          <h1>Check your <span>inbox.</span></h1>
+          <p className="subtitle">Enter the six digit code we sent you to finish subscribing.</p>
+          <section className="subscribe-card verification-card" aria-labelledby="verification-title">
+            <div className="subscribe-icon"><Mail size={19} /></div>
+            <div className="subscribe-copy">
+              <span className="mini-label">VERIFY YOUR EMAIL</span>
+              <h2 id="verification-title">Almost there!</h2>
+              <p>Your jokes are just one code away.</p>
+            </div>
+            <form className="verification-form" onSubmit={verifySubscription}>
+              <label htmlFor="verification-email">EMAIL ADDRESS</label>
+              <input
+                id="verification-email"
+                type="email"
+                autoComplete="email"
+                required
+                value={verificationEmail}
+                onChange={(event) => setVerificationEmail(event.target.value)}
+                disabled={verifying}
+              />
+              <label htmlFor="verification-code">6 DIGIT CODE</label>
+              <input
+                id="verification-code"
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="[0-9]{6}"
+                maxLength={6}
+                required
+                value={verificationCode}
+                onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                placeholder="000000"
+                aria-describedby={subscriptionOutcome ? "subscription-outcome" : undefined}
+                disabled={verifying}
+              />
+              <button className="subscribe-button verify-button" type="submit" disabled={verifying || verificationCode.length !== 6}>
+                {verifying ? <><RotateCw className="spin" size={16} /> Verifying...</> : "Verify and subscribe"}
+              </button>
+            </form>
+            {subscriptionOutcome && (
+              <p id="subscription-outcome" className={`subscription-outcome ${subscriptionOutcome.success ? "success" : "failure"}`} role={subscriptionOutcome.success ? "status" : "alert"}>
+                {subscriptionOutcome.success && <Check size={15} />}{subscriptionOutcome.message}
+              </p>
+            )}
+            <button className="back-to-subscribe" type="button" onClick={() => { setVerificationStep(false); setSubscriptionOutcome(null); setEmail(verificationEmail); }}>
+              ← Back
+            </button>
+          </section>
+        </section>
+      ) : <section className="hero">
         <div className="eyebrow"><Sparkles size={14} /> A LITTLE LAUGH GOES A LONG WAY</div>
         <h1>Jack the <span>Joker.</span></h1>
         <p className="subtitle">Got a topic? Jack's got a joke.<br className="mobile-break" /> Let's make your day a little funnier.</p>
@@ -217,7 +313,7 @@ function App() {
           )}
         </section>
         <div className="under-card"><span>NO BAD DAYS ALLOWED</span><span className="under-star">✳</span><span>JUST GOOD JOKES</span></div>
-      </section>
+      </section>}
 
       <footer><span>© {new Date().getFullYear()} JACK THE JOKER</span><span><Terminal size={13} /> POWERED BY YOUR IMAGINATION</span></footer>
     </main>
