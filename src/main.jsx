@@ -6,8 +6,170 @@ import "./styles.css";
 const API_URL = "http://localhost:8080/api/jokes";
 const SUBSCRIPTION_API_URL = "http://localhost:8080/api/subscriptions";
 const SUBSCRIPTION_VERIFY_API_URL = "http://localhost:8080/api/subscribers/verify";
+const ADMIN_API_URL = "http://localhost:8080/api/admin";
+
+function AdminPage() {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [token, setToken] = useState("");
+  const [users, setUsers] = useState([]);
+  const [loggingIn, setLoggingIn] = useState(false);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [adminError, setAdminError] = useState("");
+
+  async function loadUsers(jwt) {
+    setLoadingUsers(true);
+    setAdminError("");
+
+    try {
+      const response = await fetch(`${ADMIN_API_URL}/users`, {
+        headers: { Accept: "application/json", Authorization: `Bearer ${jwt}` },
+      });
+      const body = await response.text();
+      let data;
+      try { data = body ? JSON.parse(body) : null; } catch { data = null; }
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          setToken("");
+          setUsers([]);
+          throw new Error("Your admin session is invalid or has expired. Please log in again.");
+        }
+        throw new Error(data?.error ?? data?.message ?? `Could not load users (HTTP ${response.status}).`);
+      }
+
+      setUsers(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setAdminError(err instanceof TypeError
+        ? "Couldn't reach the admin service. Check that the backend is running and allows requests from this page."
+        : err.message || "Could not load admin users.");
+    } finally {
+      setLoadingUsers(false);
+    }
+  }
+
+  async function login(event) {
+    event.preventDefault();
+    setLoggingIn(true);
+    setAdminError("");
+
+    try {
+      const response = await fetch(`${ADMIN_API_URL}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ username: username.trim(), password }),
+      });
+      const body = await response.text();
+      let data;
+      try { data = body ? JSON.parse(body) : null; } catch { data = null; }
+
+      if (!response.ok) {
+        throw new Error(data?.error ?? data?.message ?? `Login failed (HTTP ${response.status}).`);
+      }
+      if (!data?.token) throw new Error("The admin service did not return an access token.");
+
+      setToken(data.token);
+      setPassword("");
+      await loadUsers(data.token);
+    } catch (err) {
+      setAdminError(err instanceof TypeError
+        ? "Couldn't reach the admin service. Check that the backend is running and allows requests from this page."
+        : err.message || "Login failed. Please try again.");
+    } finally {
+      setLoggingIn(false);
+    }
+  }
+
+  function logout() {
+    setToken("");
+    setUsers([]);
+    setAdminError("");
+  }
+
+  return (
+    <section className="hero admin-page">
+      <div className="eyebrow"><Terminal size={14} /> ADMIN AREA</div>
+      <h1>Admin <span>access.</span></h1>
+      <p className="subtitle">Sign in to view the registered admin users.</p>
+
+      {!token ? (
+        <section className="admin-card" aria-labelledby="admin-login-title">
+          <div className="admin-card-heading">
+            <span className="admin-icon"><Terminal size={19} /></span>
+            <div>
+              <span className="mini-label">RESTRICTED AREA</span>
+              <h2 id="admin-login-title">Admin login</h2>
+            </div>
+          </div>
+          <form className="admin-form" onSubmit={login}>
+            <label htmlFor="admin-username">USERNAME</label>
+            <input
+              id="admin-username"
+              type="text"
+              autoComplete="username"
+              required
+              maxLength={100}
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              disabled={loggingIn}
+            />
+            <label htmlFor="admin-password">PASSWORD</label>
+            <input
+              id="admin-password"
+              type="password"
+              autoComplete="current-password"
+              required
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              disabled={loggingIn}
+            />
+            <button className="subscribe-button admin-submit" type="submit" disabled={loggingIn}>
+              {loggingIn ? <><RotateCw className="spin" size={16} /> Signing in...</> : "Sign in"}
+            </button>
+          </form>
+          {adminError && <p className="admin-message failure" role="alert">{adminError}</p>}
+        </section>
+      ) : (
+        <section className="admin-card users-card" aria-labelledby="admin-users-title">
+          <div className="users-heading">
+            <div>
+              <span className="mini-label">ADMINISTRATION</span>
+              <h2 id="admin-users-title">Admin users</h2>
+            </div>
+            <div className="users-actions">
+              <button className="admin-secondary-button" type="button" onClick={() => loadUsers(token)} disabled={loadingUsers}>
+                {loadingUsers ? <RotateCw className="spin" size={15} /> : <RotateCw size={15} />} Refresh
+              </button>
+              <button className="admin-secondary-button" type="button" onClick={logout}>Log out</button>
+            </div>
+          </div>
+          {adminError && <p className="admin-message failure" role="alert">{adminError}</p>}
+          {loadingUsers && users.length === 0 ? (
+            <p className="admin-empty" role="status">Loading users...</p>
+          ) : users.length === 0 ? (
+            <p className="admin-empty">No admin users found.</p>
+          ) : (
+            <div className="users-table-wrap">
+              <table className="users-table">
+                <thead><tr><th>Username</th><th>Created</th><th>Last updated</th></tr></thead>
+                <tbody>{users.map((user) => (
+                  <tr key={user.id ?? user.username}>
+                    <td>{user.username}</td>
+                    <td>{user.createdAt ? new Date(user.createdAt).toLocaleString() : "—"}</td>
+                    <td>{user.updatedAt ? new Date(user.updatedAt).toLocaleString() : "—"}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+    </section>
+  );
+}
 
 function App() {
+  const isAdminPage = window.location.pathname.replace(/\/+$/, "") === "/admin";
   const [prompt, setPrompt] = useState("A kid friendly joke please");
   const [joke, setJoke] = useState("");
   const [loading, setLoading] = useState(false);
@@ -172,14 +334,17 @@ function App() {
       <div className="glow glow-one" aria-hidden="true" />
       <div className="glow glow-two" aria-hidden="true" />
       <header className="topbar">
-        <a className="brand" href="#" aria-label="Jack the Joker home">
+        <a className="brand" href="/" aria-label="Jack the Joker home">
           <span className="brand-mark"><img src="/jack-the-joker-logo.png" alt="" /></span>
           <span>JACK <b>THE JOKER</b></span>
         </a>
-        <span className="status"><span className="status-dot" /> YOUR DAILY DOSE OF FUN</span>
+        <div className="topbar-right">
+          <span className="status"><span className="status-dot" /> YOUR DAILY DOSE OF FUN</span>
+          <a className="admin-nav-link" href={isAdminPage ? "/" : "/admin"}>{isAdminPage ? "Back to site" : "Admin"}</a>
+        </div>
       </header>
 
-      {verificationStep ? (
+      {isAdminPage ? <AdminPage /> : verificationStep ? (
         <section className="hero verification-page">
           <div className="eyebrow"><Mail size={14} /> ONE QUICK CHECK</div>
           <h1>Check your <span>inbox.</span></h1>
