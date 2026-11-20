@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Sparkles, Laugh, RotateCw, Terminal, Copy, Check, WandSparkles, Mail } from "lucide-react";
 import "./styles.css";
@@ -9,13 +9,31 @@ const SUBSCRIPTION_VERIFY_API_URL = "http://localhost:8080/api/subscribers/verif
 const ADMIN_API_URL = "http://localhost:8080/api/admin";
 
 function AdminPage() {
+  const [token, setToken] = useState(() => sessionStorage.getItem("adminToken") || "");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [token, setToken] = useState("");
+  const [currentUsername, setCurrentUsername] = useState(() => sessionStorage.getItem("adminUsername") || "");
   const [users, setUsers] = useState([]);
+  const [sessionReady, setSessionReady] = useState(() => !sessionStorage.getItem("adminToken"));
   const [loggingIn, setLoggingIn] = useState(false);
   const [loadingUsers, setLoadingUsers] = useState(false);
+  const [creatingUser, setCreatingUser] = useState(false);
+  const [newUsername, setNewUsername] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [savingUserId, setSavingUserId] = useState(null);
+  const [deletingUserId, setDeletingUserId] = useState(null);
+  const [editingUserId, setEditingUserId] = useState(null);
+  const [editUsername, setEditUsername] = useState("");
+  const [editPassword, setEditPassword] = useState("");
   const [adminError, setAdminError] = useState("");
+
+  function clearSession() {
+    sessionStorage.removeItem("adminToken");
+    sessionStorage.removeItem("adminUsername");
+    setToken("");
+    setCurrentUsername("");
+    setUsers([]);
+  }
 
   async function loadUsers(jwt) {
     setLoadingUsers(true);
@@ -31,8 +49,7 @@ function AdminPage() {
 
       if (!response.ok) {
         if (response.status === 401) {
-          setToken("");
-          setUsers([]);
+          clearSession();
           throw new Error("Your admin session is invalid or has expired. Please log in again.");
         }
         throw new Error(data?.error ?? data?.message ?? `Could not load users (HTTP ${response.status}).`);
@@ -47,6 +64,14 @@ function AdminPage() {
       setLoadingUsers(false);
     }
   }
+
+  useEffect(() => {
+    if (!token) {
+      setSessionReady(true);
+      return;
+    }
+    loadUsers(token).finally(() => setSessionReady(true));
+  }, []);
 
   async function login(event) {
     event.preventDefault();
@@ -68,7 +93,10 @@ function AdminPage() {
       }
       if (!data?.token) throw new Error("The admin service did not return an access token.");
 
+      sessionStorage.setItem("adminToken", data.token);
+      sessionStorage.setItem("adminUsername", username.trim());
       setToken(data.token);
+      setCurrentUsername(username.trim());
       setPassword("");
       await loadUsers(data.token);
     } catch (err) {
@@ -80,10 +108,131 @@ function AdminPage() {
     }
   }
 
-  function logout() {
-    setToken("");
-    setUsers([]);
+  async function logout() {
     setAdminError("");
+    try {
+      const response = await fetch(`${ADMIN_API_URL}/auth/logout`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      });
+      if (!response.ok) {
+        if (response.status === 401) {
+          clearSession();
+          setAdminError("Your session had already expired. Please sign in again.");
+          return;
+        }
+        throw new Error(`Logout failed (HTTP ${response.status}).`);
+      }
+      clearSession();
+    } catch (err) {
+      setAdminError(err instanceof TypeError
+        ? "Couldn't reach the admin service, so the token could not be invalidated. Please try again."
+        : err.message || "Logout failed. Please try again.");
+    }
+  }
+
+  function beginEdit(user) {
+    setEditingUserId(user.id);
+    setEditUsername(user.username);
+    setEditPassword("");
+    setAdminError("");
+  }
+
+  async function saveUser(user) {
+    setSavingUserId(user.id);
+    setAdminError("");
+    try {
+      const response = await fetch(`${ADMIN_API_URL}/users/${user.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ username: editUsername.trim(), password: editPassword || null }),
+      });
+      const body = await response.text();
+      let data;
+      try { data = body ? JSON.parse(body) : null; } catch { data = null; }
+      if (!response.ok) throw new Error(data?.error ?? data?.message ?? `Could not update user (HTTP ${response.status}).`);
+
+      setEditingUserId(null);
+      setEditPassword("");
+      if (user.username === currentUsername) {
+        clearSession();
+        setAdminError("Your account was updated. Sign in again to continue.");
+      } else {
+        await loadUsers(token);
+      }
+    } catch (err) {
+      setAdminError(err instanceof TypeError
+        ? "Couldn't reach the admin service. Check the backend connection and try again."
+        : err.message || "Could not update admin user.");
+    } finally {
+      setSavingUserId(null);
+    }
+  }
+
+  async function deleteUser(user) {
+    if (!window.confirm(`Delete admin user “${user.username}”? This cannot be undone.`)) return;
+    setDeletingUserId(user.id);
+    setAdminError("");
+    try {
+      const response = await fetch(`${ADMIN_API_URL}/users/${user.id}`, {
+        method: "DELETE",
+        headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        const body = await response.text();
+        let data;
+        try { data = body ? JSON.parse(body) : null; } catch { data = null; }
+        throw new Error(data?.error ?? data?.message ?? `Could not delete user (HTTP ${response.status}).`);
+      }
+
+      if (user.username === currentUsername) {
+        clearSession();
+        setAdminError("Your account was deleted. Sign in with another admin account.");
+      } else {
+        await loadUsers(token);
+      }
+    } catch (err) {
+      setAdminError(err instanceof TypeError
+        ? "Couldn't reach the admin service. Check the backend connection and try again."
+        : err.message || "Could not delete admin user.");
+    } finally {
+      setDeletingUserId(null);
+    }
+  }
+
+  async function createUser(event) {
+    event.preventDefault();
+    setCreatingUser(true);
+    setAdminError("");
+    try {
+      const response = await fetch(`${ADMIN_API_URL}/users`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ username: newUsername.trim(), password: newPassword }),
+      });
+      const body = await response.text();
+      let data;
+      try { data = body ? JSON.parse(body) : null; } catch { data = null; }
+      if (!response.ok) throw new Error(data?.error ?? data?.message ?? `Could not create user (HTTP ${response.status}).`);
+
+      setNewUsername("");
+      setNewPassword("");
+      await loadUsers(token);
+    } catch (err) {
+      setAdminError(err instanceof TypeError
+        ? "Couldn't reach the admin service. Check the backend connection and try again."
+        : err.message || "Could not create admin user.");
+    } finally {
+      setCreatingUser(false);
+    }
   }
 
   return (
@@ -129,6 +278,8 @@ function AdminPage() {
           </form>
           {adminError && <p className="admin-message failure" role="alert">{adminError}</p>}
         </section>
+      ) : !sessionReady ? (
+        <section className="admin-card" role="status"><p className="admin-empty">Restoring your admin session...</p></section>
       ) : (
         <section className="admin-card users-card" aria-labelledby="admin-users-title">
           <div className="users-heading">
@@ -151,17 +302,77 @@ function AdminPage() {
           ) : (
             <div className="users-table-wrap">
               <table className="users-table">
-                <thead><tr><th>Username</th><th>Created</th><th>Last updated</th></tr></thead>
+                <thead><tr><th>Admin user</th><th>Created</th><th>Last updated</th><th>Actions</th></tr></thead>
                 <tbody>{users.map((user) => (
                   <tr key={user.id ?? user.username}>
-                    <td>{user.username}</td>
+                    <td>
+                      {editingUserId === user.id ? (
+                        <div className="user-edit-fields">
+                          <input aria-label={`Username for ${user.username}`} value={editUsername} onChange={(event) => setEditUsername(event.target.value)} maxLength={100} />
+                          <input aria-label={`New password for ${user.username}`} type="password" value={editPassword} onChange={(event) => setEditPassword(event.target.value)} placeholder="New password (optional)" autoComplete="new-password" />
+                        </div>
+                      ) : <>{user.username}{user.username === currentUsername && <span className="current-user-badge">You</span>}</>}
+                    </td>
                     <td>{user.createdAt ? new Date(user.createdAt).toLocaleString() : "—"}</td>
                     <td>{user.updatedAt ? new Date(user.updatedAt).toLocaleString() : "—"}</td>
+                    <td className="user-actions-cell">
+                      {editingUserId === user.id ? (
+                        <>
+                          <button className="row-action-button" type="button" onClick={() => saveUser(user)} disabled={savingUserId === user.id || !editUsername.trim() || (editPassword.length > 0 && editPassword.length < 12)}>
+                            {savingUserId === user.id ? "Saving..." : "Save"}
+                          </button>
+                          <button className="row-action-button muted" type="button" onClick={() => setEditingUserId(null)} disabled={savingUserId === user.id}>Cancel</button>
+                        </>
+                      ) : (
+                        <>
+                          <button className="row-action-button" type="button" onClick={() => beginEdit(user)} disabled={deletingUserId === user.id}>Edit</button>
+                          <button className="row-action-button danger" type="button" onClick={() => deleteUser(user)} disabled={deletingUserId === user.id}>{deletingUserId === user.id ? "Deleting..." : "Delete"}</button>
+                        </>
+                      )}
+                    </td>
                   </tr>
                 ))}</tbody>
               </table>
             </div>
           )}
+          <form className="create-user-form" onSubmit={createUser}>
+            <div className="create-user-heading">
+              <span className="mini-label">ACCOUNT MANAGEMENT</span>
+              <h3>Create admin user</h3>
+            </div>
+            <div className="create-user-fields">
+              <label>
+                <span>USERNAME</span>
+                <input
+                  type="text"
+                  autoComplete="off"
+                  required
+                  minLength={3}
+                  maxLength={100}
+                  value={newUsername}
+                  onChange={(event) => setNewUsername(event.target.value)}
+                  disabled={creatingUser}
+                />
+              </label>
+              <label>
+                <span>PASSWORD</span>
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  required
+                  minLength={12}
+                  maxLength={200}
+                  value={newPassword}
+                  onChange={(event) => setNewPassword(event.target.value)}
+                  disabled={creatingUser}
+                />
+              </label>
+              <button className="subscribe-button create-user-button" type="submit" disabled={creatingUser}>
+                {creatingUser ? <><RotateCw className="spin" size={15} /> Creating...</> : "Create user"}
+              </button>
+            </div>
+            <p className="create-user-hint">Passwords must be at least 12 characters.</p>
+          </form>
         </section>
       )}
     </section>

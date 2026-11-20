@@ -91,6 +91,26 @@ form label { display: block; color: #c7c6bc; font-size: 10px; letter-spacing: .1
 .users-table th, .users-table td { padding: 13px 14px; border-bottom: 1px solid #ffffff10; white-space: nowrap; }
 .users-table td:first-child { color: var(--lime); font-weight: 600; }
 .users-table tr:last-child td { border-bottom: 0; }
+.current-user-badge { margin-left: 8px; padding: 3px 6px; border-radius: 99px; color: #d5fa58; background: #d5fa5818; font-size: 9px; font-weight: 600; }
+.user-edit-fields { display: grid; gap: 7px; min-width: 190px; }
+.user-edit-fields input { min-width: 0; padding: 8px 9px; border: 1px solid #42423a; border-radius: 7px; outline: 0; color: #f6f4ee; background: #111110; font-size: 11px; }
+.user-edit-fields input:focus { border-color: var(--lime); }
+.user-actions-cell { display: flex; gap: 6px; }
+.row-action-button { padding: 6px 8px; border: 1px solid #d5fa5840; border-radius: 7px; color: var(--lime); background: #d5fa580a; font-size: 10px; font-weight: 600; }
+.row-action-button:hover:not(:disabled) { background: #d5fa5818; }
+.row-action-button:disabled { cursor: wait; opacity: .55; }
+.row-action-button.muted { border-color: #ffffff20; color: #aaa99f; background: #ffffff08; }
+.row-action-button.danger { border-color: #ffb6a84d; color: #ffb6a8; background: #ffb6a80a; }
+.create-user-form { margin-top: 24px; padding-top: 20px; border-top: 1px solid #ffffff12; }
+.create-user-heading h3 { margin: 5px 0 0; color: #f6f4ee; font: 600 16px 'Space Grotesk', sans-serif; letter-spacing: -.03em; }
+.create-user-fields { display: grid; grid-template-columns: 1fr 1fr auto; align-items: end; gap: 10px; margin-top: 14px; }
+.create-user-fields label { min-width: 0; margin: 0; }
+.create-user-fields label span { display: block; margin-bottom: 8px; color: #c7c6bc; font-size: 9px; letter-spacing: .12em; font-weight: 700; }
+.create-user-fields input { width: 100%; min-width: 0; color: #f6f4ee; background: #111110; border: 1px solid #42423a; border-radius: 9px; outline: 0; padding: 10px; font-size: 12px; }
+.create-user-fields input:focus { border-color: var(--lime); box-shadow: 0 0 0 3px #d5fa5814; }
+.create-user-fields input:disabled { opacity: .7; }
+.create-user-button { min-height: 39px; }
+.create-user-hint { margin: 9px 0 0; color: #88877e; font-size: 10px; }
 .subscribe-card { display: grid; grid-template-columns: 42px 1fr; gap: 0 13px; margin-top: 16px; padding: 20px; border: 1px solid rgba(255,255,255,.1); border-radius: 17px; background: rgba(27,27,25,.78); }
 .subscribe-icon { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 12px; color: #17190f; background: var(--lime); }
 .subscribe-copy h2 { font: 600 17px 'Space Grotesk', sans-serif; letter-spacing: -.03em; margin: 4px 0; }
@@ -153,6 +173,8 @@ footer svg { color: var(--lime); }
   .users-heading { align-items: flex-start; flex-direction: column; }
   .users-actions { width: 100%; }
   .admin-secondary-button { flex: 1; }
+  .create-user-fields { grid-template-columns: 1fr; }
+  .create-user-button { width: 100%; }
   .subscribe-form { flex-direction: column; }
   .subscribe-button { min-height: 46px; }
   .card-topline { gap: 12px; margin-bottom: 24px; }
